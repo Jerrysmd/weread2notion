@@ -377,7 +377,7 @@ if __name__ == "__main__":
             title = book.get("title")
             cover = book.get("cover")
             if book.get("author") == "公众号" and book.get("cover").endswith("/0"):
-                cover += ".jpg"
+                cover = cover.replace('http://', 'https://') + ".jpg"
             if cover.startswith("http") and not cover.endswith(".jpg"):
                 path = download_image(cover)
                 cover = (

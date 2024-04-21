@@ -11,24 +11,24 @@
 
 ## 使用
 
-> [!IMPORTANT]  
-> 关注公众号获取教程
+1. star本项目
+2. fork这个工程
+3. 获取微信读书的Cookie
+    * 浏览器打开 https://weread.qq.com/
+    * 微信扫码登录确认，提示没有权限忽略即可
+    * 按F12进入开发者模式，依次点 Network -> Doc -> Headers-> cookie。复制 Cookie 字符串;
+4. 获取NotionToken
+    * 浏览器打开https://www.notion.so/my-integrations
+    * 点击New integration 输入name提交
+    * 点击show，然后copy
+5. 复制[这个Notion模板](https://www.notion.so/malinkang/517ada8ea6534ae0afeb0b9e23d5554c?v=bdc3188f8fc04af5965293e53064722c&pvs=4)，删掉所有的数据，并点击右上角设置，Connections添加你创建的Integration。
 
-![扫码_搜索联合传播样式-标准色版](https://github.com/malinkang/weread2notion/assets/3365208/191900c6-958e-4f9b-908d-a40a54889b5e)
-
-
-## 群
-> [!IMPORTANT]  
-> 欢迎加入微信群讨论。可以讨论使用中遇到的任何问题，也可以讨论Notion使用，后续我也会在群中分享更多Notion自动化工具。
-
-![WechatIMG53](https://github.com/malinkang/weread2notion/assets/3365208/75131b27-87e2-4d60-ac10-cfcfee6cfa29)
-
-
-
-## 捐赠
-
-如果你觉得本项目帮助了你，请作者喝一杯咖啡，你的支持是作者最大的动力。本项目会持续更新。
-
-![](./asset/WechatIMG27.jpg)
-
-
+6. 获取NotionDatabaseID
+    * 打开Notion数据库，点击右上角的Share，然后点击Copy link
+    * 获取链接后比如 https://www.notion.so/malinkang/1b78f0fd0d03484caa00154285ffec0c?v=7ed7e3fbe69043a28d2847e76f075d99&pvs=4 中间的1b78f0fd0d03484caa00154285ffec0c就是DatabaseID
+7. 在Github的Secrets中添加以下变量
+    * 打开你fork的工程，点击Settings->Secrets and variables->New repository secret
+    * 添加以下变量
+        * WEREAD_COOKIE
+        * NOTION_TOKEN
+        * NOTION_DATABASE_ID
