@@ -8,7 +8,14 @@ jobs:
   sync:
     name: Sync
     runs-on: ubuntu-latest
-    env: 
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NOTION_PAGE: ${{ secrets.NOTION_PAGE }}
+      NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      WEREAD_COOKIE: ${{ secrets.WEREAD_COOKIE }}
+      CC_URL: ${{ secrets.CC_URL }}
+      CC_ID: ${{ secrets.CC_ID }}
+      CC_PASSWORD: ${{ secrets.CC_PASSWORD }}
       YEAR: ${{ vars.YEAR }}
     steps:
       - name: Checkout
@@ -36,5 +43,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add .
-          git commit -m 'add new cover' || echo "nothing to commit"
+          git commit -m 'feat: add new book cover' || echo "nothing to commit"
           git push || echo "nothing to push"

@@ -1,17 +1,19 @@
 import argparse
-import json
+import hashlib
 import logging
 import os
 import re
 import time
-from notion_client import Client
-import requests
-from requests.utils import cookiejar_from_dict
-from http.cookies import SimpleCookie
 from datetime import datetime
-import hashlib
+from http.cookies import SimpleCookie
 
-from utils import get_callout, get_date, get_file, get_heading, get_icon, get_multi_select, get_number, get_quote, get_rich_text, get_select, get_table_of_contents, get_title, get_url
+import requests
+from notion_client import Client
+from requests.utils import cookiejar_from_dict
+from retrying import retry
+
+from utils import get_callout, get_date, get_file, get_heading, get_icon, get_multi_select, get_number, get_quote, \
+    get_rich_text, get_select, get_table_of_contents, get_title, get_url
 
 WEREAD_URL = "https://weread.qq.com/"
 WEREAD_NOTEBOOKS_URL = "https://weread.qq.com/api/user/notebook"
@@ -33,6 +35,10 @@ def parse_cookie_string(cookie_string):
     return cookiejar
 
 
+def refresh_token(exception):
+    session.get(WEREAD_URL)
+
+@retry(stop_max_attempt_number=3, wait_fixed=5000, retry_on_exception=refresh_token)
 def get_bookmark_list(bookId):
     """获取我的划线"""
     params = dict(bookId=bookId)
@@ -55,6 +61,7 @@ def get_read_info(bookId):
     return None
 
 
+@retry(stop_max_attempt_number=3, wait_fixed=5000,retry_on_exception=refresh_token)
 def get_bookinfo(bookId):
     """获取书的详情"""
     params = dict(bookId=bookId)
@@ -69,9 +76,10 @@ def get_bookinfo(bookId):
         print(f"get {bookId} book info failed")
         return ("", 0)
 
-
+@retry(stop_max_attempt_number=3, wait_fixed=5000,retry_on_exception=refresh_token)
 def get_review_list(bookId):
     """获取笔记"""
+    session.get(WEREAD_URL)
     params = dict(bookId=bookId, listType=11, mine=1, syncKey=0)
     r = session.get(WEREAD_REVIEW_LIST_URL, params=params)
     reviews = r.json().get("reviews")
@@ -91,9 +99,10 @@ def check(bookId):
         time.sleep(0.3)
         client.blocks.delete(block_id=result["id"])
 
-
+@retry(stop_max_attempt_number=3, wait_fixed=5000,retry_on_exception=refresh_token)
 def get_chapter_info(bookId):
     """获取章节信息"""
+    session.get(WEREAD_URL)
     body = {"bookIds": [bookId], "synckeys": [0], "teenmode": 0}
     r = session.post(WEREAD_CHAPTER_INFO, json=body)
     if (
@@ -171,6 +180,7 @@ def add_grandchild(grandchild, results):
 
 def get_notebooklist():
     """获取笔记本列表"""
+    session.get(WEREAD_URL)
     r = session.get(WEREAD_NOTEBOOKS_URL)
     if r.ok:
         data = r.json()
@@ -318,6 +328,54 @@ def calculate_book_str_id(book_id):
     result += md5.hexdigest()[0:3]
     return result
 
+def try_get_cloud_cookie(url, id, password):
+    if url.endswith("/"):
+        url = url[:-1]
+    req_url = f"{url}/get/{id}"
+    data = {"password": password}
+    result = None
+    response = requests.post(req_url, data=data)
+    if response.status_code == 200:
+        data = response.json()
+        cookie_data = data.get("cookie_data")
+        if cookie_data and "weread.qq.com" in cookie_data:
+            cookies = cookie_data["weread.qq.com"]
+            cookie_str = "; ".join(
+                [f"{cookie['name']}={cookie['value']}" for cookie in cookies]
+            )
+            result = cookie_str
+    return result
+
+def get_cookie():
+    url = os.getenv("CC_URL")
+    if not url:
+        url = "https://cookiecloud.malinkang.com/"
+    id = os.getenv("CC_ID")
+    password = os.getenv("CC_PASSWORD")
+    cookie = os.getenv("WEREAD_COOKIE")
+    if url and id and password:
+        cookie = try_get_cloud_cookie(url, id, password)
+    if not cookie or not cookie.strip():
+        raise Exception("没有找到cookie，请按照文档填写cookie")
+    return cookie
+
+
+
+def extract_page_id():
+    url = os.getenv("NOTION_PAGE")
+    if not url:
+        url = os.getenv("NOTION_DATABASE_ID")
+    if not url:
+        raise Exception("没有找到NOTION_PAGE，请按照文档填写")
+    # 正则表达式匹配 32 个字符的 Notion page_id
+    match = re.search(
+        r"([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})",
+        url,
+    )
+    if match:
+        return match.group(0)
+    else:
+        raise Exception(f"获取NotionID失败，请检查输入的Url是否正确")
 
 def download_image(url, save_dir="cover"):
     # 确保目录存在，如果不存在则创建
@@ -353,15 +411,15 @@ if __name__ == "__main__":
     parser.add_argument("repository")
     parser.add_argument("--styles", nargs="+", type=int, help="划线样式")
     parser.add_argument("--colors", nargs="+", type=int, help="划线颜色")
-    # options = parser.parse_args()
-    weread_cookie = "wr_gid=223866298; RK=+a9gen4csw; ptcz=5da9f023a65b46aaa53d9f20e43bbbaca2fa64f48bc1e53bdcc1c295a3c69c06; LW_uid=Y1S6P9z8f5A8b9G0o2X8N947c8; eas_sid=X1B65998P5R8m9m0V2G920y304; LW_sid=U1v6k9O8E5d8k9W0Z8q7z0z240; pgv_pvid=3359343237; pac_uid=0_34fdcb8b74dcc; iip=0; _qimei_uuid42=17c1e002803100ea3e2c3cdb7d4585ea34ed1b5c7e; _qimei_fingerprint=99455d36f555626372cebc8e59f3ae33; _qimei_q36=; _qimei_h38=8f95e1db3e2c3cdb7d4585ea02000000517c1e; ptui_loginuin=836612643; wr_vid=75694564; wr_pf=0; wr_rt=web%40qU1U5~adaeobm5_5bQW_AL; wr_localvid=43632fd0748301e4436e9e9; wr_name=Jerry%E3%82%8D%E3%81%8F; wr_gender=1; wr_avatar=https%3A%2F%2Fthirdwx.qlogo.cn%2Fmmopen%2Fvi_32%2FQ0j4TwGTfTJcbn9nKJ0EOFfGg6eRb6wg0mQ5BmJQQiciaUge1F9vLUkyCphhO5VH0JYf0RR9Ua9ChpUZs1xOIbxw%2F132; suid=ek170386800313006617; wr_skey=tcI1tWh5; wr_fp=3873716542"
-    database_id = "c36b33378ab44eaa8a4e0d51acb419cd"
-    notion_token = "secret_O0n8lPFZ2E7KAIGV0Ac3FNTQFJDCDzUoIxSA4jWv1zk"
-    ref = ""
+    options = parser.parse_args()
+    weread_cookie = get_cookie()
+    database_id = options.database_id
+    notion_token = options.notion_token
+    ref = options.ref
     branch = ref.split("/")[-1]
-    repository = ""
-    styles = ""
-    colors = ""
+    repository = options.repository
+    styles = options.styles
+    colors = options.colors
     session = requests.Session()
     session.cookies = parse_cookie_string(weread_cookie)
     client = Client(auth=notion_token, log_level=logging.ERROR)
