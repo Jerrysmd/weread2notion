@@ -1,20 +1,34 @@
 import argparse
-import hashlib
+import json
 import logging
 import os
 import re
 import time
-from datetime import datetime
-from http.cookies import SimpleCookie
-
-import requests
 from notion_client import Client
+import requests
 from requests.utils import cookiejar_from_dict
+from http.cookies import SimpleCookie
+from datetime import datetime
+import hashlib
+from dotenv import load_dotenv
+import os
 from retrying import retry
-
-from utils import get_callout, get_date, get_file, get_heading, get_icon, get_multi_select, get_number, get_quote, \
-    get_rich_text, get_select, get_table_of_contents, get_title, get_url
-
+from utils import (
+    get_callout,
+    get_date,
+    get_file,
+    get_heading,
+    get_icon,
+    get_multi_select,
+    get_number,
+    get_quote,
+    get_rich_text,
+    get_select,
+    get_table_of_contents,
+    get_title,
+    get_url,
+)
+load_dotenv()
 WEREAD_URL = "https://weread.qq.com/"
 WEREAD_NOTEBOOKS_URL = "https://weread.qq.com/api/user/notebook"
 WEREAD_BOOKMARKLIST_URL = "https://weread.qq.com/web/book/bookmarklist"
@@ -34,16 +48,17 @@ def parse_cookie_string(cookie_string):
         cookiejar = cookiejar_from_dict(cookies_dict, cookiejar=None, overwrite=True)
     return cookiejar
 
-
 def refresh_token(exception):
     session.get(WEREAD_URL)
 
-@retry(stop_max_attempt_number=3, wait_fixed=5000, retry_on_exception=refresh_token)
+@retry(stop_max_attempt_number=3, wait_fixed=5000,retry_on_exception=refresh_token)
 def get_bookmark_list(bookId):
     """获取我的划线"""
+    session.get(WEREAD_URL)
     params = dict(bookId=bookId)
     r = session.get(WEREAD_BOOKMARKLIST_URL, params=params)
     if r.ok:
+        print(r.json())
         updated = r.json().get("updated")
         updated = sorted(
             updated,
@@ -52,25 +67,26 @@ def get_bookmark_list(bookId):
         return r.json()["updated"]
     return None
 
-
+@retry(stop_max_attempt_number=3, wait_fixed=5000,retry_on_exception=refresh_token)
 def get_read_info(bookId):
+    session.get(WEREAD_URL)
     params = dict(bookId=bookId, readingDetail=1, readingBookIndex=1, finishedDate=1)
     r = session.get(WEREAD_READ_INFO_URL, params=params)
     if r.ok:
         return r.json()
     return None
 
-
 @retry(stop_max_attempt_number=3, wait_fixed=5000,retry_on_exception=refresh_token)
 def get_bookinfo(bookId):
     """获取书的详情"""
+    session.get(WEREAD_URL)
     params = dict(bookId=bookId)
     r = session.get(WEREAD_BOOK_INFO, params=params)
     isbn = ""
     if r.ok:
         data = r.json()
-        isbn = data["isbn"]
-        newRating = data["newRating"] / 1000
+        isbn = data.get("isbn","")
+        newRating = data.get("newRating", 0) / 1000
         return (isbn, newRating)
     else:
         print(f"get {bookId} book info failed")
@@ -92,12 +108,13 @@ def get_review_list(bookId):
 
 def check(bookId):
     """检查是否已经插入过 如果已经插入了就删除"""
-    time.sleep(0.3)
     filter = {"property": "BookId", "rich_text": {"equals": bookId}}
     response = client.databases.query(database_id=database_id, filter=filter)
     for result in response["results"]:
-        time.sleep(0.3)
-        client.blocks.delete(block_id=result["id"])
+        try:
+            client.blocks.delete(block_id=result["id"])
+        except Exception as e:
+            print(f"删除块时出错: {e}")
 
 @retry(stop_max_attempt_number=3, wait_fixed=5000,retry_on_exception=refresh_token)
 def get_chapter_info(bookId):
@@ -118,20 +135,23 @@ def get_chapter_info(bookId):
 
 def insert_to_notion(bookName, bookId, cover, sort, author, isbn, rating, categories):
     """插入到notion"""
-    time.sleep(0.3)
+    if not cover or not cover.startswith("http"):
+        cover = "https://www.notion.so/icons/book_gray.svg"
     parent = {"database_id": database_id, "type": "database_id"}
     properties = {
-        "BookName":get_title(bookName),
+        "BookName": get_title(bookName),
         "BookId": get_rich_text(bookId),
         "ISBN": get_rich_text(isbn),
-        "URL": get_url(f"https://weread.qq.com/web/reader/{calculate_book_str_id(bookId)}"),
+        "URL": get_url(
+            f"https://weread.qq.com/web/reader/{calculate_book_str_id(bookId)}"
+        ),
         "Author": get_rich_text(author),
         "Sort": get_number(sort),
         "Rating": get_number(rating),
         "Cover": get_file(cover),
     }
     if categories != None:
-        properties["Categories"] =get_multi_select(categories)
+        properties["Categories"] = get_multi_select(categories)
     read_info = get_read_info(bookId=bookId)
     if read_info != None:
         markedStatus = read_info.get("markedStatus", 0)
@@ -148,14 +168,15 @@ def insert_to_notion(bookName, bookId, cover, sort, author, isbn, rating, catego
         properties["ReadingTime"] = get_rich_text(format_time)
         properties["Progress"] = get_number(readingProgress)
         if "finishedDate" in read_info:
-            properties["Date"] = get_date(datetime.utcfromtimestamp(
-                        read_info.get("finishedDate")
-                    ).strftime("%Y-%m-%d %H:%M:%S"))
+            properties["Date"] = get_date(
+                datetime.utcfromtimestamp(read_info.get("finishedDate")).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            )
 
-    if cover.startswith("http"):
-        icon = get_icon(cover)
+    icon = get_icon(cover)
     # notion api 限制100个block
-    response = client.pages.create(parent=parent, icon=icon, properties=properties)
+    response = client.pages.create(parent=parent, icon=icon,cover=icon, properties=properties)
     id = response["id"]
     return id
 
@@ -230,11 +251,6 @@ def get_children(chapter, summary, bookmark_list):
                     )
                 )
             for i in value:
-                if data.get("reviewId") == None and "style" in i and "colorStyle" in i:
-                    if i.get("style") not in styles:
-                        continue
-                    if i.get("colorStyle") not in colors:
-                        continue
                 markText = i.get("markText")
                 for j in range(0, len(markText) // 2000 + 1):
                     children.append(
@@ -252,15 +268,6 @@ def get_children(chapter, summary, bookmark_list):
     else:
         # 如果没有章节信息
         for data in bookmark_list:
-            if (
-                data.get("reviewId") == None
-                and "style" in data
-                and "colorStyle" in data
-            ):
-                if data.get("style") not in styles:
-                    continue
-                if data.get("colorStyle") not in colors:
-                    continue
             markText = data.get("markText")
             for i in range(0, len(markText) // 2000 + 1):
                 children.append(
@@ -328,6 +335,7 @@ def calculate_book_str_id(book_id):
     result += md5.hexdigest()[0:3]
     return result
 
+
 def try_get_cloud_cookie(url, id, password):
     if url.endswith("/"):
         url = url[:-1]
@@ -345,6 +353,7 @@ def try_get_cloud_cookie(url, id, password):
             )
             result = cookie_str
     return result
+
 
 def get_cookie():
     url = os.getenv("CC_URL")
@@ -377,49 +386,12 @@ def extract_page_id():
     else:
         raise Exception(f"获取NotionID失败，请检查输入的Url是否正确")
 
-def download_image(url, save_dir="cover"):
-    # 确保目录存在，如果不存在则创建
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-
-    # 获取文件名，使用 URL 最后一个 '/' 之后的字符串
-    file_name = url.split("/")[-1] + ".jpg"
-    save_path = os.path.join(save_dir, file_name)
-
-    # 检查文件是否已经存在，如果存在则不进行下载
-    if os.path.exists(save_path):
-        print(f"File {file_name} already exists. Skipping download.")
-        return save_path
-
-    response = requests.get(url, stream=True)
-    if response.status_code == 200:
-        with open(save_path, "wb") as file:
-            for chunk in response.iter_content(chunk_size=128):
-                file.write(chunk)
-        print(f"Image downloaded successfully to {save_path}")
-    else:
-        print(f"Failed to download image. Status code: {response.status_code}")
-    return save_path
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("weread_cookie")
-    parser.add_argument("notion_token")
-    parser.add_argument("database_id")
-    parser.add_argument("ref")
-    parser.add_argument("repository")
-    parser.add_argument("--styles", nargs="+", type=int, help="划线样式")
-    parser.add_argument("--colors", nargs="+", type=int, help="划线颜色")
     options = parser.parse_args()
     weread_cookie = get_cookie()
-    database_id = options.database_id
-    notion_token = options.notion_token
-    ref = options.ref
-    branch = ref.split("/")[-1]
-    repository = options.repository
-    styles = options.styles
-    colors = options.colors
+    database_id = extract_page_id()
+    notion_token = os.getenv("NOTION_TOKEN")
     session = requests.Session()
     session.cookies = parse_cookie_string(weread_cookie)
     client = Client(auth=notion_token, log_level=logging.ERROR)
@@ -433,14 +405,7 @@ if __name__ == "__main__":
                 continue
             book = book.get("book")
             title = book.get("title")
-            cover = book.get("cover")
-            if book.get("author") == "公众号" and book.get("cover").endswith("/0"):
-                cover = cover.replace('http://', 'https://') + ".jpg"
-            if cover.startswith("http") and not cover.endswith(".jpg"):
-                path = download_image(cover)
-                cover = (
-                    f"https://raw.githubusercontent.com/{repository}/{branch}/{path}"
-                )
+            cover = book.get("cover").replace("/s_", "/t7_")
             bookId = book.get("bookId")
             author = book.get("author")
             categories = book.get("categories")
@@ -460,9 +425,14 @@ if __name__ == "__main__":
                 bookmark_list,
                 key=lambda x: (
                     x.get("chapterUid", 1),
-                    0
-                    if (x.get("range", "") == "" or x.get("range").split("-")[0] == "")
-                    else int(x.get("range").split("-")[0]),
+                    (
+                        0
+                        if (
+                            x.get("range", "") == ""
+                            or x.get("range").split("-")[0] == ""
+                        )
+                        else int(x.get("range").split("-")[0])
+                    ),
                 ),
             )
             children, grandchild = get_children(chapter, summary, bookmark_list)
