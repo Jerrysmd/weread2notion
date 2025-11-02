@@ -110,32 +110,29 @@ def check(bookId):
     """检查是否已经插入过 如果已经插入了就删除"""
     filter = {"property": "BookId", "rich_text": {"equals": bookId}}
     # Try different method names for different notion-client versions
-    if hasattr(client.databases, 'query'):
+    try:
+        # Try standard query method
         response = client.databases.query(database_id=database_id, filter=filter)
-    elif hasattr(client.databases, 'query_database'):
-        response = client.databases.query_database(database_id=database_id, filter=filter)
-    else:
-        # Fallback: use requests directly to call Notion API
-        url = f"https://api.notion.com/v1/databases/{database_id}/query"
-        # Get auth token from environment or client
-        auth_token = os.getenv("NOTION_TOKEN")
-        if not auth_token and hasattr(client, '_client'):
-            # Try to get token from client's internal structure
-            try:
-                auth_token = getattr(client._client, '_auth', None) or getattr(client, 'auth', None)
-            except:
-                pass
-        if not auth_token:
-            raise Exception("无法获取 Notion API token")
-        headers = {
-            "Authorization": f"Bearer {auth_token}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
-        payload = {"filter": filter}
-        resp = requests.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        response = resp.json()
+    except AttributeError:
+        # Method doesn't exist, try query_database or fallback to direct API call
+        try:
+            response = client.databases.query_database(database_id=database_id, filter=filter)
+        except AttributeError:
+            # Fallback: use requests directly to call Notion API
+            url = f"https://api.notion.com/v1/databases/{database_id}/query"
+            # Get auth token from environment
+            auth_token = os.getenv("NOTION_TOKEN")
+            if not auth_token:
+                raise Exception("无法获取 Notion API token")
+            headers = {
+                "Authorization": f"Bearer {auth_token}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json"
+            }
+            payload = {"filter": filter}
+            resp = requests.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            response = resp.json()
     for result in response["results"]:
         try:
             client.blocks.delete(block_id=result["id"])
@@ -249,36 +246,33 @@ def get_sort():
         }
     ]
     # Try different method names for different notion-client versions
-    if hasattr(client.databases, 'query'):
+    try:
+        # Try standard query method
         response = client.databases.query(
             database_id=database_id, filter=filter, sorts=sorts, page_size=1
         )
-    elif hasattr(client.databases, 'query_database'):
-        response = client.databases.query_database(
-            database_id=database_id, filter=filter, sorts=sorts, page_size=1
-        )
-    else:
-        # Fallback: use requests directly to call Notion API
-        url = f"https://api.notion.com/v1/databases/{database_id}/query"
-        # Get auth token from environment or client
-        auth_token = os.getenv("NOTION_TOKEN")
-        if not auth_token and hasattr(client, '_client'):
-            # Try to get token from client's internal structure
-            try:
-                auth_token = getattr(client._client, '_auth', None) or getattr(client, 'auth', None)
-            except:
-                pass
-        if not auth_token:
-            raise Exception("无法获取 Notion API token")
-        headers = {
-            "Authorization": f"Bearer {auth_token}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
-        payload = {"filter": filter, "sorts": sorts, "page_size": 1}
-        resp = requests.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        response = resp.json()
+    except AttributeError:
+        # Method doesn't exist, try query_database or fallback to direct API call
+        try:
+            response = client.databases.query_database(
+                database_id=database_id, filter=filter, sorts=sorts, page_size=1
+            )
+        except AttributeError:
+            # Fallback: use requests directly to call Notion API
+            url = f"https://api.notion.com/v1/databases/{database_id}/query"
+            # Get auth token from environment
+            auth_token = os.getenv("NOTION_TOKEN")
+            if not auth_token:
+                raise Exception("无法获取 Notion API token")
+            headers = {
+                "Authorization": f"Bearer {auth_token}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json"
+            }
+            payload = {"filter": filter, "sorts": sorts, "page_size": 1}
+            resp = requests.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            response = resp.json()
     if len(response.get("results")) == 1:
         return response.get("results")[0].get("properties").get("Sort").get("number")
     return 0
